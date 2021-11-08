@@ -1,0 +1,60 @@
+FROM centos:centos7.8.2003
+
+RUN yum -y install curl bzip2 sudo wget which vim \
+    && yum -y install epel-release sudo less gcc make cmake\
+    && yum clean all
+
+# ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+ENV CONDA_VERSION 4.8.2
+ENV CONDA_MD5 87e77f097f6ebb5127c77662dfc3165e
+
+ENV USER_ID 1003
+
+# Create non-root user, install dependencies, install Conda
+RUN useradd -d /home/anaconda -m -u "${USER_ID}" anaconda \
+    # for debug
+    && printf 'anaconda:temppass\n' | chpasswd \
+    && printf 'anaconda ALL=(ALL) ALL\n' >> /etc/sudoers \
+    && wget --quiet https://repo.continuum.io/miniconda/Miniconda3-py37_4.8.2-Linux-x86_64.sh \
+    && printf "${CONDA_MD5}  Miniconda3-py37_4.8.2-Linux-x86_64.sh\n" > miniconda.md5 \
+    && if [ $(md5sum -c miniconda.md5 | awk '{print $2}') != 'OK' ] ; then exit 1; fi \
+    && mv Miniconda3-py37_4.8.2-Linux-x86_64.sh miniconda.sh \
+    && mkdir -p /opt \
+    && bash ./miniconda.sh -b -p /opt/conda \
+    && rm miniconda.sh miniconda.md5 \
+    && ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh \
+    && chown -R anaconda:anaconda /opt \
+    && find /opt/conda/ -follow -type f -name '*.a' -delete \
+    && find /opt/conda/ -follow -type f -name '*.js.map' -delete \
+    && /opt/conda/bin/conda clean -afy
+
+
+USER $USER_ID
+
+# user setting for conda
+RUN printf '. /opt/conda/etc/profile.d/conda.sh\n' >> /home/anaconda/.bash_profile \
+    && printf 'conda activate base\n' >> /home/anaconda/.bash_profile \
+    && printf 'jupyter lab --no-browser --ip=0.0.0.0 --port=8888\n' >> /home/anaconda/.bash_history
+
+# temp for debug
+RUN mkdir -p /home/anaconda/mount
+
+RUN . /opt/conda/etc/profile.d/conda.sh \
+    && conda activate base \
+    && conda install -c conda-forge -qy scikit-learn==0.22.1 pytables==3.6.1 pandas==0.24.1 matplotlib==3.1.3 jupyter jupyterlab \
+    && conda install -c conda-forge -qy swifter==0.305 pyarrow==0.17.1 pymatgen==2020.10.20 2>&1 >/dev/null \
+    && conda install -c pytorch pytorch=1.6.0=py3.7_cuda10.2.89_cudnn7.6.5_0 \
+    && pip install torch-scatter==2.0.5+cu102 -f https://pytorch-geometric.com/whl/torch-1.6.0.html \
+    && pip install torch-sparse==0.6.7+cu102 -f https://pytorch-geometric.com/whl/torch-1.6.0.html \
+    && pip install torch-cluster==1.5.7+cu102 -f https://pytorch-geometric.com/whl/torch-1.6.0.html \
+    && pip install torch-spline-conv==1.2.0+cu102 -f https://pytorch-geometric.com/whl/torch-1.6.0.html \
+    && pip install torch-geometric==1.6.1
+
+EXPOSE 8888
+
+WORKDIR /home/anaconda
+
+ENV PATH '/bin:/sbin:/usr/bin'
+
+CMD [ "/bin/bash", "-l" ]
+
